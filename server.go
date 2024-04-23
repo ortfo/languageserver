@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"regexp"
-	"strings"
 
 	ortfodb "github.com/ortfo/db"
 	"go.lsp.dev/protocol"
@@ -15,75 +14,11 @@ import (
 
 var YAMLSeparator = regexp.MustCompile(ortfodb.PatternYAMLSeparator)
 
-type DescriptionFile struct {
-	contents string
-	lines    []string
-	cursor   protocol.Position
-}
-
-func (d DescriptionFile) YAMLArrayElement() any {
-	_, value := d.YAMLMapping()
-	switch value := value.(type) {
-	case []any:
-		commasCountBeforeCursor := strings.Count(d.CurrentLine()[:d.cursor.Character], ",")
-		if len(value) > commasCountBeforeCursor {
-			return value[commasCountBeforeCursor]
-		}
-		return nil
-	default:
-		return nil
-	}
-}
-
-func CurrentFile(params protocol.TextDocumentPositionParams) (DescriptionFile, error) {
-	contentsRaw, err := os.ReadFile(params.TextDocument.URI.Filename())
-	if err != nil {
-		return DescriptionFile{}, fmt.Errorf("while reading file at %s: %w", params.TextDocument.URI.Filename(), err)
-	}
-	contents := string(contentsRaw)
-	return DescriptionFile{
-		contents: contents,
-		lines:    strings.Split(contents, "\n"),
-		cursor:   params.Position,
-	}, nil
-}
-
-func (d DescriptionFile) CurrentLine() string {
-	return d.lines[d.cursor.Line]
-}
-
-func (d DescriptionFile) YAMLMapping() (key string, value any) {
-	if !d.InFrontmatter() {
-		return "", nil
-	}
-
-	var mapping map[string]interface{}
-	yaml.Unmarshal([]byte(d.CurrentLine()), &mapping)
-	for k, v := range mapping {
-		return k, v
-	}
-
-	return "", nil
-}
-
-func (d DescriptionFile) YAMLKey() string {
-	k, _ := d.YAMLMapping()
-	return k
-}
-
-func (d DescriptionFile) InFrontmatter() bool {
-	for _, line := range d.lines[d.cursor.Line:] {
-		if YAMLSeparator.MatchString(line) {
-			return true
-		}
-	}
-	return false
-}
-
 type Handler struct {
 	protocol.Server
-	config ortfodb.Configuration
-	tags   []yaml.Node
+	config       ortfodb.Configuration
+	tags         []yaml.Node
+	technologies []yaml.Node
 }
 
 func (h *Handler) Initialize(ctx context.Context, params *protocol.InitializeParams) (*protocol.InitializeResult, error) {
@@ -115,47 +50,56 @@ func (h *Handler) Definition(ctx context.Context, params *protocol.DefinitionPar
 		return []protocol.Location{}, fmt.Errorf("while getting current file: %w", err)
 	}
 
-	if file.InFrontmatter() {
-		key, value := file.YAMLMapping()
+	if key, node, inside := file.InFrontmatter(); inside {
 		switch key {
 		case "tags":
-			loc, err := h.DefinitionLocationOfTag(value.(string))
-			if err != nil {
-				return []protocol.Location{}, fmt.Errorf("while getting location of tag %s: %w", value, err)
-			}
-
-			return []protocol.Location{loc}, nil
+			pos, err := DefinitionLocationOf[ortfodb.Tag](node.Value, h.tags)
+			return []protocol.Location{
+				{
+					URI: uri.File(h.config.Tags.Repository),
+					Range: protocol.Range{
+						Start: pos,
+						End:   pos,
+					},
+				},
+			}, err
+		case "made with":
+			pos, err := DefinitionLocationOf[ortfodb.Technology](node.Value, h.technologies)
+			return []protocol.Location{
+				{
+					URI: uri.File(h.config.Technologies.Repository),
+					Range: protocol.Range{
+						Start: pos,
+						End:   pos,
+					},
+				},
+			}, err
 		}
 	}
 	return []protocol.Location{}, nil
 }
 
-func (h *Handler) DefinitionLocationOfTag(name string) (protocol.Location, error) {
-	for _, tagNode := range h.tags {
-		var tag ortfodb.Tag
+type referrable interface {
+	ReferredToBy(string) bool
+}
+
+func DefinitionLocationOf[T referrable](name string, repo []yaml.Node) (protocol.Position, error) {
+	for _, tagNode := range repo {
+		var tag T
 		err := tagNode.Decode(&tag)
 		if err != nil {
-			return protocol.Location{}, fmt.Errorf("while decoding tag node %s : %w", tagNode, err)
+			return protocol.Position{}, fmt.Errorf("while decoding tag node %s : %w", tagNode, err)
 		}
 
 		if tag.ReferredToBy(name) {
-			return protocol.Location{
-				URI: uri.File(h.config.Tags.Repository),
-				Range: protocol.Range{
-					Start: protocol.Position{
-						Line:      uint32(tagNode.Line),
-						Character: uint32(tagNode.Column),
-					},
-					End: protocol.Position{
-						Line:      uint32(tagNode.Line),
-						Character: uint32(tagNode.Column),
-					},
-				},
+			return protocol.Position{
+				Line:      uint32(tagNode.Line),
+				Character: uint32(tagNode.Column),
 			}, nil
 		}
 	}
 
-	return protocol.Location{}, fmt.Errorf("tag %q not found in repository", name)
+	return protocol.Position{}, fmt.Errorf("tag %q not found in repository", name)
 }
 
 func (h *Handler) LoadTags() error {

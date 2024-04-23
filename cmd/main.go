@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/davecgh/go-spew/spew"
-	ortfodb "github.com/ortfo/db"
+	// ortfodb "github.com/ortfo/db"
 	"gopkg.in/yaml.v3"
 )
 
@@ -21,7 +21,20 @@ func main() {
 		fmt.Printf("while loading %s as YAML: %s", "tags.yaml", err)
 	}
 
-	var tag ortfodb.Tag
-	nodes[0].Decode(&tag)
-	spew.Dump(tag)
+	for _, n := range nodes {
+		m := make(map[string]string)
+		var k string
+		for i, v := range n.Content {
+			if i%2 == 0 {
+				k = v.Value
+			} else {
+				m[k] = fmt.Sprintf("%v", v.Kind)
+			}
+		}
+
+		spew.Dump(m)
+
+		// var tag ortfodb.Tag
+		// spew.Dump(n)
+	}
 }
