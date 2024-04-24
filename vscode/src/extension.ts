@@ -44,12 +44,12 @@ export function activate(context: ExtensionContext) {
   const serverOptions: ServerOptions = {
     run: {
       command: serverModule,
-      options: { cwd: configurationHome },
+      args: [configurationFilepath],
       transport: TransportKind.stdio,
     },
     debug: {
       command: serverModule,
-      options: { cwd: configurationHome },
+      args: [configurationFilepath],
       transport: TransportKind.stdio,
     },
   }
