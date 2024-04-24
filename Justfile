@@ -1,3 +1,9 @@
+vscode:
+	cd vscode; bun vsce package
+
+publish:
+	cd vscode; bun vsce publish
+
 build:
 	go build -o ortfols cmd/main.go
 
