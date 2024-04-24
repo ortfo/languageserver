@@ -2,4 +2,4 @@
 
 ## Installation
 
-Requires installing `ortfols` and having in on your PATH.
+Requires [installing `ortfodb`](https://ortfo.org/db/getting-started#installation) and having in on your PATH.

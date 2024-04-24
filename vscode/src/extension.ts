@@ -18,7 +18,7 @@ import untildify from "untildify-commonjs"
 let client: LanguageClient
 
 export function activate(context: ExtensionContext) {
-  const serverModule = "ortfols"
+  const serverModule = "ortfodb"
 
   const configurationFilepath: string = workspace
     .getConfiguration("ortfo")
@@ -44,11 +44,11 @@ export function activate(context: ExtensionContext) {
   const serverOptions: ServerOptions = {
     run: {
       command: serverModule,
-      args: [configurationFilepath],
+      args: ["-c", configurationFilepath, "lsp"],
       transport: TransportKind.stdio,
     },
     debug: {
-      command: serverModule,
+      command: "ortfols",
       args: [configurationFilepath],
       transport: TransportKind.stdio,
     },
