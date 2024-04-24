@@ -1,40 +1,63 @@
 package main
 
 import (
-	"fmt"
+	"context"
+	"io"
 	"os"
 
-	"github.com/davecgh/go-spew/spew"
+	"github.com/ortfo/languageserver"
+	"go.lsp.dev/jsonrpc2"
+	"go.lsp.dev/protocol"
+	"go.uber.org/multierr"
+	"go.uber.org/zap"
 	// ortfodb "github.com/ortfo/db"
-	"gopkg.in/yaml.v3"
 )
 
 func main() {
-	contents, err := os.ReadFile("tags.yaml")
+	logconf := zap.NewDevelopmentConfig()
+	logconf.OutputPaths = []string{"/home/uwun/projects/ortfo/languageserver/logs/server.log"}
+	logger, _ := logconf.Build()
+
+	conn := jsonrpc2.NewConn(jsonrpc2.NewStream(&readWriteCloser{
+		reader: os.Stdin,
+		writer: os.Stdout,
+	}))
+	// notifier := protocol.ClientDispatcher(conn, logger.Named("notify"))
+	// handler := languageserver.Handler{
+	// 	Logger: logger,
+	// 	Server: protocol.ServerDispatcher(conn, logger),
+	// }
+	handler, ctx, err := languageserver.NewHandler(context.Background(), protocol.ServerDispatcher(conn, logger), logger)
 	if err != nil {
-		fmt.Printf("while reading file %s: %s", "tags.yaml", err)
+		logger.Sugar().Fatalf("while initializing handler: %w", err)
 	}
 
-	var nodes []yaml.Node
-	err = yaml.Unmarshal(contents, &nodes)
+	conn.Go(ctx, protocol.ServerHandler(handler, jsonrpc2.MethodNotFoundHandler))
+	<-conn.Done()
+}
+
+type readWriteCloser struct {
+	reader io.ReadCloser
+	writer io.WriteCloser
+}
+
+func (r *readWriteCloser) Read(b []byte) (int, error) {
+	f, _ := os.OpenFile("/home/uwun/projects/ortfo/languageserver/logs/client-request-from.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	n, err := r.reader.Read(b)
 	if err != nil {
-		fmt.Printf("while loading %s as YAML: %s", "tags.yaml", err)
+		f.Write([]byte(err.Error() + "\n"))
+	} else {
+		f.Write(b)
 	}
+	return n, err
+}
 
-	for _, n := range nodes {
-		m := make(map[string]string)
-		var k string
-		for i, v := range n.Content {
-			if i%2 == 0 {
-				k = v.Value
-			} else {
-				m[k] = fmt.Sprintf("%v", v.Kind)
-			}
-		}
+func (r *readWriteCloser) Write(b []byte) (int, error) {
+	f, _ := os.OpenFile("/home/uwun/projects/ortfo/languageserver/logs/client-response-to.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f.Write(b)
+	return r.writer.Write(b)
+}
 
-		spew.Dump(m)
-
-		// var tag ortfodb.Tag
-		// spew.Dump(n)
-	}
+func (r *readWriteCloser) Close() error {
+	return multierr.Append(r.reader.Close(), r.writer.Close())
 }
