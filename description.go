@@ -10,12 +10,15 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+var descriptionFiles = make(map[protocol.URI]string, 0)
+
 type DescriptionFile struct {
-	contents          string
-	lines             []string
-	cursor            protocol.Position
-	frontmatter       *yaml.Node
-	frontmatterEndsAt protocol.Position
+	contents            string
+	lines               []string
+	cursor              protocol.Position
+	frontmatter         *yaml.Node
+	frontmatterEndsAt   protocol.Position
+	frontmatterMappings map[string]yaml.Node
 }
 
 func (d DescriptionFile) CurrentLine() string {
@@ -62,12 +65,29 @@ func (d DescriptionFile) InFrontmatter() (closestKey string, closestNode *yaml.N
 	return "", nil, false
 }
 
-func CurrentFile(params protocol.TextDocumentPositionParams) (DescriptionFile, error) {
-	contentsRaw, err := os.ReadFile(params.TextDocument.URI.Filename())
+func loadFile(uri protocol.URI) (string, error) {
+	logger.Debug("loading from disk", zap.Any("uri", uri))
+	contentsRaw, err := os.ReadFile(uri.Filename())
 	if err != nil {
-		return DescriptionFile{}, fmt.Errorf("while reading file at %s: %w", params.TextDocument.URI.Filename(), err)
+		return "", fmt.Errorf("while reading file at %s: %w", uri.Filename(), err)
 	}
 	contents := string(contentsRaw)
+	descriptionFiles[uri] = contents
+	return contents, nil
+}
+
+func CurrentFile(uri protocol.URI, cursor protocol.Position) (DescriptionFile, error) {
+	var contents string
+	if contentsFromMap, ok := descriptionFiles[uri]; ok {
+		contents = contentsFromMap
+	} else {
+		var err error
+		contents, err = loadFile(uri)
+		if err != nil {
+			return DescriptionFile{}, fmt.Errorf("while loading file from disk: %w", err)
+		}
+	}
+
 	var frontmatter yaml.Node
 	frontmatterRaw, frontmatterBoundaryLineNumber := extractFrontmatter(contents)
 	if err := yaml.Unmarshal([]byte(frontmatterRaw), &frontmatter); err != nil {
@@ -75,12 +95,19 @@ func CurrentFile(params protocol.TextDocumentPositionParams) (DescriptionFile, e
 	}
 
 	frontmatter = *frontmatter.Content[0]
+	var frontmatterMappings map[string]yaml.Node
+
+	err := yaml.Unmarshal([]byte(frontmatterRaw), &frontmatterMappings)
+	if err != nil {
+		return DescriptionFile{}, fmt.Errorf("frontmatter is not a mapping: %w", err)
+	}
 
 	return DescriptionFile{
-		contents:    contents,
-		lines:       strings.Split(contents, "\n"),
-		cursor:      params.Position,
-		frontmatter: &frontmatter,
+		contents:            contents,
+		lines:               strings.Split(contents, "\n"),
+		cursor:              cursor,
+		frontmatter:         &frontmatter,
+		frontmatterMappings: frontmatterMappings,
 		frontmatterEndsAt: protocol.Position{
 			Line:      uint32(frontmatterBoundaryLineNumber),
 			Character: 0,

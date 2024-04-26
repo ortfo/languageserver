@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"regexp"
+	"strings"
 
 	ortfodb "github.com/ortfo/db"
 	"go.lsp.dev/protocol"
@@ -68,6 +70,14 @@ func (h Handler) Initialize(ctx context.Context, params *protocol.InitializePara
 		Capabilities: protocol.ServerCapabilities{
 			DefinitionProvider: true,
 			HoverProvider:      true,
+			ColorProvider:      true,
+			TextDocumentSync: protocol.TextDocumentSyncOptions{
+				OpenClose: true,
+				Change:    protocol.TextDocumentSyncKindFull,
+				Save: &protocol.SaveOptions{
+					IncludeText: false,
+				},
+			},
 		},
 		ServerInfo: &protocol.ServerInfo{
 			Name:    "ortfols",
@@ -78,7 +88,7 @@ func (h Handler) Initialize(ctx context.Context, params *protocol.InitializePara
 
 func (h Handler) Definition(ctx context.Context, params *protocol.DefinitionParams) ([]protocol.Location, error) {
 	h.Logger.Debug("LSP:Definition", zap.Any("state", h.state), zap.Any("params", params))
-	file, err := CurrentFile(params.TextDocumentPositionParams)
+	file, err := CurrentFile(params.TextDocumentPositionParams.TextDocument.URI, params.TextDocumentPositionParams.Position)
 	if err != nil {
 		return []protocol.Location{}, fmt.Errorf("while getting current file: %w", err)
 	}
@@ -152,7 +162,17 @@ func (h Handler) CodeLensResolve(ctx context.Context, params *protocol.CodeLens)
 }
 
 func (h Handler) ColorPresentation(ctx context.Context, params *protocol.ColorPresentationParams) ([]protocol.ColorPresentation, error) {
-	return nil, errors.New("unimplemented")
+	logger.Debug("LSP:ColorPresentation", zap.Any("params", params), zap.String("color", encodeColorLiteral(params.Color)))
+	logger.Debug("roundtrip", zap.Any("result", decodeColorLiteral(encodeColorLiteral(params.Color))), zap.Any("source", params.Color))
+	return []protocol.ColorPresentation{
+		{
+			Label: encodeColorLiteral(params.Color),
+			TextEdit: &protocol.TextEdit{
+				Range:   params.Range,
+				NewText: strings.TrimPrefix(encodeColorLiteral(params.Color), "#"),
+			},
+		},
+	}, nil
 }
 
 func (h Handler) Completion(ctx context.Context, params *protocol.CompletionParams) (*protocol.CompletionList, error) {
@@ -168,7 +188,19 @@ func (h Handler) Declaration(ctx context.Context, params *protocol.DeclarationPa
 }
 
 func (h Handler) DidChange(ctx context.Context, params *protocol.DidChangeTextDocumentParams) error {
-	return errors.New("unimplemented")
+	if filepath.Base(params.TextDocument.URI.Filename()) != "description.md" {
+		return nil
+	}
+
+	if len(params.ContentChanges) == 0 {
+		return nil
+	}
+
+	lastChange := params.ContentChanges[len(params.ContentChanges)-1]
+
+	logger.Debug("DidChange", zap.String("lastChange.Text", lastChange.Text))
+	descriptionFiles[params.TextDocument.URI] = lastChange.Text
+	return nil
 }
 
 func (h Handler) DidChangeConfiguration(ctx context.Context, params *protocol.DidChangeConfigurationParams) error {
@@ -184,19 +216,57 @@ func (h Handler) DidChangeWorkspaceFolders(ctx context.Context, params *protocol
 }
 
 func (h Handler) DidClose(ctx context.Context, params *protocol.DidCloseTextDocumentParams) error {
-	return errors.New("unimplemented")
+	logger.Debug("DidClose", zap.Any("descriptionFiles keys (before)", keys(descriptionFiles)))
+	delete(descriptionFiles, params.TextDocument.URI)
+	logger.Debug("DidClose", zap.Any("descriptionFiles keys (after)", keys(descriptionFiles)))
+	return nil
 }
 
 func (h Handler) DidOpen(ctx context.Context, params *protocol.DidOpenTextDocumentParams) error {
+	logger.Debug("DidClose", zap.Any("descriptionFiles keys (before)", keys(descriptionFiles)))
+	loadFile(params.TextDocument.URI)
+	logger.Debug("DidClose", zap.Any("descriptionFiles keys (after)", keys(descriptionFiles)))
 	return errors.New("unimplemented")
 }
 
 func (h Handler) DidSave(ctx context.Context, params *protocol.DidSaveTextDocumentParams) error {
-	return errors.New("unimplemented")
+	loadFile(params.TextDocument.URI)
+	return nil
 }
 
 func (h Handler) DocumentColor(ctx context.Context, params *protocol.DocumentColorParams) ([]protocol.ColorInformation, error) {
-	return nil, errors.New("unimplemented")
+	file, err := CurrentFile(params.TextDocument.URI, protocol.Position{})
+	if err != nil {
+		return []protocol.ColorInformation{}, fmt.Errorf("while getting current file: %w", err)
+	}
+
+	colors := []protocol.ColorInformation{}
+
+	for key, node := range file.frontmatterMappings {
+		if key == "colors" {
+			var colorNodes map[string]yaml.Node
+			err := node.Decode(&colorNodes)
+			if err != nil {
+				return []protocol.ColorInformation{}, fmt.Errorf("color frontmatter key is not a mapping: %w", err)
+			}
+
+			for _, node := range colorNodes {
+				if node.Kind == yaml.ScalarNode {
+					colors = append(colors, protocol.ColorInformation{
+						Range: protocol.Range{
+							Start: positionOf(&node),
+							End:   endPositionOf(&node),
+						},
+						Color: decodeColorLiteral(node.Value),
+					})
+				}
+			}
+		}
+	}
+
+	logger.Debug("DocumentColor", zap.Any("colors", colors))
+
+	return colors, nil
 }
 
 func (h Handler) DocumentHighlight(ctx context.Context, params *protocol.DocumentHighlightParams) ([]protocol.DocumentHighlight, error) {
@@ -229,7 +299,7 @@ func (h Handler) Formatting(ctx context.Context, params *protocol.DocumentFormat
 
 func (h Handler) Hover(ctx context.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
 	h.Logger.Debug("LSP:Hover", zap.Any("state", h.state(ctx)), zap.Any("params", params))
-	file, err := CurrentFile(params.TextDocumentPositionParams)
+	file, err := CurrentFile(params.TextDocumentPositionParams.TextDocument.URI, params.TextDocumentPositionParams.Position)
 	if err != nil {
 		return nil, fmt.Errorf("while getting current file: %w", err)
 	}

@@ -13,6 +13,13 @@ func positionOf(node *yaml.Node) protocol.Position {
 	}
 }
 
+func endPositionOf(node *yaml.Node) protocol.Position{
+	return protocol.Position{
+		Line:      uint32(node.Line) - 1,
+		Character: uint32(node.Column) - 1 + uint32(len(node.Value)),
+	}
+}
+
 func isAfterCursor(sequenceStyle yaml.Style, node *yaml.Node, cursor protocol.Position) bool {
 	logger.Debug("isAfterCursor", zap.Any("node", node), zap.Any("cursor", cursor))
 	if sequenceStyle == yaml.FlowStyle {
