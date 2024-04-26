@@ -48,7 +48,7 @@ export function activate(context: ExtensionContext) {
       transport: TransportKind.stdio,
     },
     debug: {
-      command: "ortfols",
+      command: "/home/uwun/.local/bin/ortfols",
       args: [configurationFilepath],
       transport: TransportKind.stdio,
     },
