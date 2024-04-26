@@ -162,8 +162,7 @@ func (h Handler) CodeLensResolve(ctx context.Context, params *protocol.CodeLens)
 }
 
 func (h Handler) ColorPresentation(ctx context.Context, params *protocol.ColorPresentationParams) ([]protocol.ColorPresentation, error) {
-	logger.Debug("LSP:ColorPresentation", zap.Any("params", params), zap.String("color", encodeColorLiteral(params.Color)))
-	logger.Debug("roundtrip", zap.Any("result", decodeColorLiteral(encodeColorLiteral(params.Color))), zap.Any("source", params.Color))
+	logger.Debug("LSP:ColorPresentation", zap.Any("color", params.Color))
 	return []protocol.ColorPresentation{
 		{
 			Label: encodeColorLiteral(params.Color),

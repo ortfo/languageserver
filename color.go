@@ -1,9 +1,8 @@
 package languageserver
 
 import (
-	"fmt"
+	"math"
 	"regexp"
-	"strconv"
 
 	"github.com/mazznoer/csscolorparser"
 	"go.lsp.dev/protocol"
@@ -23,30 +22,29 @@ func decodeColorLiteral(raw string) protocol.Color {
 	logger.Debug("decodeColorLiteral", zap.Any("color", color))
 
 	return protocol.Color{
-		Red:   color.R,
-		Alpha: color.A,
-		Blue:  color.B,
-		Green: color.G,
+		Red:   roundToThree(color.R),
+		Alpha: roundToThree(color.A),
+		Blue:  roundToThree(color.B),
+		Green: roundToThree(color.G),
 	}
 }
 
 func encodeColorLiteral(color protocol.Color) string {
 	logger.Debug("encodeColorLiteral", zap.Any("color", color))
-	out := "#"
-	out += encodeHexComponent(color.Red)
-	out += encodeHexComponent(color.Blue)
-	out += encodeHexComponent(color.Green)
-	if color.Alpha != 1 {
-		out += encodeHexComponent(color.Alpha)
-	}
+	out := csscolorparser.Color{
+		R: roundToThree(color.Red),
+		G: roundToThree(color.Green),
+		B: roundToThree(color.Blue),
+		A: roundToThree(color.Alpha),
+	}.HexString()
 	logger.Debug("encodeColorLiteral", zap.String("out", out))
 	return out
 }
 
-func encodeHexComponent(value float64) string {
-	return fmt.Sprintf("%02s", strconv.FormatInt(int64(value*255), 16))
-}
-
 func hexLike(s string) bool {
 	return regexp.MustCompile(`^[0-9a-fA-F]{3,8}$`).MatchString(s)
+}
+
+func roundToThree(f float64) float64 {
+    return math.Round(f*1_00) / 1_00
 }

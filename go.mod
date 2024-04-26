@@ -4,6 +4,7 @@ go 1.22.2
 
 require (
 	github.com/MakeNowJust/heredoc v1.0.0
+	github.com/mazznoer/csscolorparser v0.1.3
 	github.com/ortfo/db v1.5.0
 	go.lsp.dev/protocol v0.12.0
 	gopkg.in/yaml.v3 v3.0.1
