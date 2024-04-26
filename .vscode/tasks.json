@@ -27,7 +27,14 @@
         "panel": "dedicated",
         "reveal": "never"
       },
-      "problemMatcher": ["$tsc-watch"]
-    }
+      "problemMatcher": ["$tsc-watch"],
+			"dependsOn": ["go:compile"]
+    },
+		{
+			"label": "go:compile",
+			"type": "shell",
+			"command": "just",
+			"args": ["install"]
+		}
   ]
 }
