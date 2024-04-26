@@ -81,7 +81,7 @@ func (h Handler) Initialize(ctx context.Context, params *protocol.InitializePara
 		},
 		ServerInfo: &protocol.ServerInfo{
 			Name:    "ortfols",
-			Version: ortfodb.Version,
+			Version: fmt.Sprintf("%s (built at %s)", ortfodb.Version, BuiltAt),
 		},
 	}, nil
 }

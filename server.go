@@ -10,8 +10,9 @@ import (
 	"go.lsp.dev/protocol"
 	"go.uber.org/multierr"
 	"go.uber.org/zap"
-	// ortfodb "github.com/ortfo/db"
 )
+
+var BuiltAt string
 
 // StartServer starts the language server. It reads from stdin and writes to stdout.
 // If logClientIn is not empty, it will log the client's request and responses to respectively client-request-from.log and client-response-to.log, in the directory specified by logClientIn.
